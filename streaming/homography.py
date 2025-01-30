@@ -16,6 +16,7 @@
 import cv2
 import numpy as np
 import pyrealsense2 as rs
+from rs_streamer import RealsenseStreamer
 
 def get_connected_devices():
     context = rs.context()
@@ -25,31 +26,34 @@ def get_connected_devices():
     return devices
 
 class HomographyManager:
-    def __init__(self):
-        self.pipeline = rs.pipeline()
+    def __init__(self, serial_no = '317422075456'):
+        
+        self.serial_no = serial_no
         self.aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_5X5_250)
         self.parameters = cv2.aruco.DetectorParameters()
         self.homography_matrix = None
 
     def start_camera(self):
-        devices = get_connected_devices()
-        if not devices:
-            raise Exception("No Realsense device connected")
-        camConfig = rs.config()
-        camConfig.enable_device(devices[0])
-        pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
-        pipeline_profile = camConfig.resolve(pipeline_wrapper)
-        device = pipeline_profile.get_device()
-        found_rgb = False
-        for s in device.sensors:
-            if s.get_info(rs.camera_info.name) == 'RGB Camera':
-                found_rgb = True
-                break
-        if not found_rgb:
-            raise Exception("The demo requires Depth camera with Color sensor")
+        # devices = get_connected_devices()
+        # if not devices:
+        #     raise Exception("No Realsense device connected")
+        # camConfig = rs.config()
+        # camConfig.enable_device(devices[0])
+        # pipeline_wrapper = rs.pipeline_wrapper(self.pipeline)
+        # pipeline_profile = camConfig.resolve(pipeline_wrapper)
+        # device = pipeline_profile.get_device()
+        # found_rgb = False
+        # for s in device.sensors:
+        #     if s.get_info(rs.camera_info.name) == 'RGB Camera':
+        #         found_rgb = True
+        #         break
+        # if not found_rgb:
+        #     raise Exception("The demo requires Depth camera with Color sensor")
 
-        camConfig.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
-        self.pipeline.start(camConfig)
+        # camConfig.enable_stream(rs.stream.color, 640, 480, rs.format.bgr8, 30)
+        # self.pipeline.start(camConfig)
+        self.realsense_streamer = RealsenseStreamer(self.serial_no)
+        self.pipeline = self.realsense_streamer.pipeline
         print("Realsense camera started")
 
     def detect_aruco_markers(self, image):
@@ -98,11 +102,10 @@ class HomographyManager:
 
     def process_frame(self, aria_corners, aria_ids, gaze_coordinates):
         frames = self.pipeline.wait_for_frames()
-        color_frame = frames.get_color_frame()
-        if not color_frame:
-            return None, None, None
-
-        color_image = np.asanyarray(color_frame.get_data())
+         # print('waiting for depth data...')
+        for i in range(2):
+            _, color_image, depth_frame, depth_img = self.realsense_streamer.capture_rgbd()
+        self.depth_frame = depth_frame
         cam_corners, cam_ids = self.detect_aruco_markers(color_image)
 
         if cam_ids is not None:

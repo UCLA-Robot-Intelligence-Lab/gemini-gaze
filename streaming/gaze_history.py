@@ -48,12 +48,17 @@ class GazeHistory():
         """
         from the gaze history, returns the median coordinates (center of the user's gaze/stare)
         """
+        print(self.gaze_history)
+        if len(self.gaze_history) < 2:
+            return None
+        if len(self.gaze_history) > 3:
+            np_gaze_history = np.array(self.gaze_history)
+            x_coordinates = np_gaze_history[:, 0]
+            y_coordinates = np_gaze_history[:, 1]
 
-        np_gaze_history = np.array(self.gaze_history)
-        x_coordinates = np_gaze_history[:, 0]
-        y_coordinates = np_gaze_history[:, 1]
-
-        return ((float(np.median(x_coordinates)), float(np.median(y_coordinates)))) # returns coordinates
+            return [np.median(x_coordinates), np.median(y_coordinates)] # returns coordinates
+        else:
+            return np.array(self.gaze_history)[-1]
     
     def report_stare_coordinates(self) -> tuple:
         return self.last_gaze_stare

@@ -35,7 +35,7 @@ from gaze_history import GazeHistory
 from multicam import XarmEnv
 
 from scipy.spatial.transform import Rotation as R
-from rs_streamer import RealsenseStreamer
+# from rs_streamer import RealsenseStreamer
 from calib_utils.linalg_utils import transform
 
 
@@ -43,7 +43,8 @@ GRIPPER_SPEED, GRIPPER_FORCE, GRIPPER_MAX_WIDTH, GRIPPER_TOLERANCE = 0.1, 40, 0.
 
 serial_no = '317422075456'
 # Get camera, load transforms, load robot 
-realsense_streamer = RealsenseStreamer(serial_no)
+# realsense_streamer = RealsenseStreamer(serial_no)
+
 transforms = np.load('calib/transforms.npy', allow_pickle=True).item()
 TCR = transforms[serial_no]['tcr']
 
@@ -119,23 +120,27 @@ def display_text(image, text: str, position, color=(0, 0, 255)):
         thickness = 3
     )
 
-def goto(robot, realsense_streamer, gaze, TCR, refine=False):
+def goto(robot, realsense_streamer, gaze, depth_frame, TCR, refine=False):
     # right
     # print(TCR)
     # TCR[0,3] += 25
     # TCR[1,3] += 25
 
-    for i in range(5):
-        _, rgb_image, depth_frame, depth_img = realsense_streamer.capture_rgbd()
+    # print('waiting for depth data...')
+    # for i in range(3):
+    #     _, rgb_image, depth_frame, depth_img = realsense_streamer.capture_rgbd()
 
     waypoint_cam = 1000.0*np.array(realsense_streamer.deproject(gaze, depth_frame))
+    print('computing transformation...')
     waypoint_rob = transform(np.array(waypoint_cam).reshape(1,3), TCR)
 
     # Get waypoints in robot frame
     ee_pos_desired =np.array(waypoint_rob)[0]
     print(ee_pos_desired)
-    lift_pos = ee_pos_desired +np.array([0,0,50])
-
+    lift_pos = ee_pos_desired #+ np.array([0,0,100])
+ 
+    lift_pos[2] = max(lift_pos[2], 250)
+    lift_pos[2] = min(lift_pos[2], 290)
     # Put robot in canonical orientation
     robot.go_home()
     ee_pos, ee_euler = robot.pose_ee()
@@ -146,30 +151,20 @@ def goto(robot, realsense_streamer, gaze, TCR, refine=False):
     _, ee_euler = robot.pose_ee()
     # # #
 
-
+    print('robot moving to', lift_pos)
     state_log = robot.move_to_ee_pose(
         lift_pos, ee_euler, 
     )
 
-    state_log = robot.move_to_ee_pose(
-        ee_pos_desired, ee_euler, 
-    )
+    # state_log = robot.move_to_ee_pose(
+    #     ee_pos_desired, ee_euler, 
+    # )
 
-    state_log = robot.move_to_ee_pose(
-        lift_pos, ee_euler, 
-    )
-    #if refine:
-    #    CALIB_OFFSET = teleop(robot)
-    #    TCR[:,3] += CALIB_OFFSET
-    #else:
-    #    state_log = robot.set_ee_pose(
-    #        position=ee_pos_desired, orientation=ee_quat, 
-    #    )
+    # state_log = robot.move_to_ee_pose(
+    #     lift_pos, ee_euler, 
+    # )
 
-    #    state_log = robot.set_ee_pose(
-    #        position=lift_pos, orientation=ee_quat, 
-    #    )
-    return TCR
+
 
 def main():
     args = parse_args()
@@ -184,7 +179,7 @@ def main():
     )
 
     # Initialize Homography Manager
-    homography_manager = HomographyManager()
+    homography_manager = HomographyManager(serial_no=serial_no)
     try:
         homography_manager.start_camera()
     except Exception as e:
@@ -298,11 +293,13 @@ def main():
     ariaCorners = None
     ariaIds = None
     gaze_coordinates = None
+    last_gaze = None
 
     # 8. Continuously loop through and run gaze estimation + postprocessing on every frame before displaying
     while not quit_keypress():
         # Render the RGB image
         try:
+            #print('looping')
             if aria.CameraId.Rgb in observer.images:
                 rgb_image = np.rot90(observer.images[aria.CameraId.Rgb], -1)
                 rgb_image = cv2.cvtColor(rgb_image, cv2.COLOR_BGR2RGB)
@@ -353,18 +350,22 @@ def main():
                         cv2.putText(realsense_image, f'Transformed Gaze: ({round(transformed_x, 2)}, {round(transformed_y, 2)})', (20, 90), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
                         
                         # gaze history returns true if user has been staring at the same (x, y) coordinate point for x amount of frames
-                        #if gaze_history.log((transformed_x, transformed_y)):
-                        #    print(f'USER IS STARING AT {gaze_history.report_stare_coordinates()}')
+                        if gaze_history.log((transformed_x, transformed_y)):
+                            print(f'USER IS STARING AT {gaze_history.report_stare_coordinates()}')
                             # gemini_model.inference3D(realsense_image)
                             # gemini_model.inference2D(realsense_image)
                         
-                        TCR = goto(robot, realsense_streamer, [round(transformed_x, 2), round(transformed_y, 2)], TCR, refine=True)
-                        transforms[serial_no]['tcr'] = TCR
-
-                        res = input('save?')
-                        if res == 'y' or res == 'Y':
-                            np.save('calib/transforms.npy', transforms)
-                            print('SAVED')
+                            gaze_median = gaze_history.history_median()
+                            if not gaze_median is None:
+                                gaze = [int(np.floor(gaze_median[0])), int(np.floor(gaze_median[1]))]                        
+                            else:
+                                gaze = [int(np.floor(transformed_x)), int(np.floor(transformed_y))]    
+                            goto(robot, homography_manager.realsense_streamer, gaze, homography_manager.depth_frame, TCR, refine=True)
+                    
+                        # res = input('save?')
+                        # if res == 'y' or res == 'Y':
+                        #     np.save('calib/transforms.npy', transforms)
+                        #     print('SAVED')
 
                     else:
                         cv2.putText(realsense_image, 'No Transformation', (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)

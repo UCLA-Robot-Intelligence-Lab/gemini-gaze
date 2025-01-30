@@ -137,6 +137,7 @@ class RealsenseStreamer():
         self.spat_filter = rs.spatial_filter()
         self.temp_filter = rs.temporal_filter()
         self.hole_filling_filter = rs.hole_filling_filter()
+        print("camera started")
 
     def deproject(self, px, depth_frame):
         u,v = px

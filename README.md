@@ -8,7 +8,7 @@ We provide instructions for both running our project code AND a full installatio
 
 1. Clone the github repository onto your local machine
 ```
-git clone https://github.com/UCLA-Robot-Intelligence-Lab/aria-gaze
+git clone https://github.com/UCLA-Robot-Intelligence-Lab/gemini-gaze
 ```
 
 2. Create the anaconda environment:
